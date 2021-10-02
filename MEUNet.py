@@ -386,8 +386,8 @@ class RSU4(nn.Module):
         return hx1d + hxin
 
 
-### RSU-4F ###
-class RSU4F(nn.Module):  # UNet04FRES(nn.Module):
+# UEN_A
+class RSU4F(nn.Module):
 
     def __init__(self, in_ch=3, mid_ch=12, out_ch=3):
         super(RSU4F, self).__init__()
@@ -440,9 +440,7 @@ class Decoder(nn.Module):
         self.side2 = nn.Conv2d(128, out_ch, 3, padding=1)
         self.side3 = nn.Conv2d(128, out_ch, 3, padding=1)
         self.side4 = nn.Conv2d(128, out_ch, 3, padding=1)
-        # self.side5 = nn.Conv2d(512, out_ch, 3, padding=1)
 
-        # 这里的第二个REBNCONV可以改成池化操作F.max_pool2d(out2_edge, kernel_size=3, stride=2, padding=1) the same
         self.edge1_down = nn.Sequential(REBNCONV(128, 128, dirate=1), nn.MaxPool2d(2, stride=2, ceil_mode=True))
         self.edge2_down = nn.Sequential(REBNCONV(128, 128, dirate=1), nn.MaxPool2d(2, stride=2, ceil_mode=True))
         self.edge3_down = nn.Sequential(REBNCONV(128, 128, dirate=1), nn.MaxPool2d(2, stride=2, ceil_mode=True))
@@ -456,11 +454,7 @@ class Decoder(nn.Module):
 
     def forward(self, input1, input2, x, edb):
 
-        #changeinput2[3]
         input2_2_up = _upsample_like(input2[3], input2[4])
-        # edb_up_as_input2_4 = _upsample_like(edb, input2[4])
-        # input_add = torch.add(edb_up_as_input2_4, input2_2_up)
-        # out_edge = self.stage1_edge(torch.add(input2[4], input_add))
         out_edge = self.stage1_edge(torch.add(input2[4], input2_2_up))
 
         out_edge56 = self.edgedownto56(out_edge)
@@ -508,25 +502,20 @@ class Decoder(nn.Module):
         d4 = self.side4(out4d)
         d4 = _upsample_like(d4, x)
 
-        # d5 = self.side5(out5d)
-        # d5 = _upsample_like(d5, x)
-
         d_united = torch.cat((d1, d2, d3, d4), 1)
         d_united = self.outconv(d_united)
 
-        # return torch.sigmoid(d0_edge), torch.sigmoid(d_united), torch.sigmoid(d1), torch.sigmoid(d2), torch.sigmoid(
-        #     d3), torch.sigmoid(d4)
         return d0_edge, d_united, d1, d2, d3, d4
 
 
 
-class ADB(nn.Module):
+class EDB(nn.Module):
     def __init__(self, in_ch, ou_ch):
-        super(ADB, self).__init__()
+        super(EDB, self).__init__()
         self.conv1 = REBNCONV(128, 128, dirate=1)
         self.conv2 = REBNCONV(128, 128, dirate=1)
 
-        self.max1 = nn.MaxPool2d(2, stride=2, ceil_mode=True)#换空洞卷积
+        self.max1 = nn.MaxPool2d(2, stride=2, ceil_mode=True)
 
     def forward(self, input):
         input1 = self.conv1(input)
@@ -560,8 +549,8 @@ class MEUNet(nn.Module):
         self.conv0e = nn.Sequential(nn.Conv2d(64, 128, kernel_size=1), nn.Conv2d(128, 128, kernel_size=3, padding=1),
                                     nn.BatchNorm2d(128), nn.ReLU(inplace=True))
 
-        self.adb = ADB(128, 128)
-        self.CA_ADB = ChannelAttention(128)
+        self.edb = EDB(128, 128)
+        self.CA = ChannelAttention(128)
         self.initialize()
 
     def forward(self, x, shape=None):
@@ -575,8 +564,8 @@ class MEUNet(nn.Module):
 
         out0 = self.conv0e(out0)
 
-        out_edb = self.adb(out5)
-        out_edb = self.CA_ADB(out_edb)
+        out_edb = self.edb(out5)
+        out_edb = self.CA(out_edb)
 
         input1 = out5
         input2 = [out4, out3, out2, out1, out0]
